@@ -1,4 +1,4 @@
-# Wision 🖐️
+# Wision 
 
 > **Control your computer with hand gestures using your webcam**
 
