@@ -4,20 +4,6 @@
 
 Wision is a real-time hand gesture recognition system that lets you control your Windows PC without touching the mouse or keyboard. It uses computer vision and machine learning to track your hand and translate gestures into system actions like cursor movement, clicks, scrolling, window management, and media control.
 
-<!-- TODO: Add your demo video here -->
-<p align="center">
-  <video src="assets/demo.mp4" width="600" controls>
-    Your browser does not support the video tag.
-  </video>
-  <br>
-  <em>👆 Replace with your own demo video showing the gesture controller in action</em>
-</p>
-
-> **Note:** If the video doesn't play on GitHub, you can also use a YouTube/Streamable link:
-> ```markdown
-> [![Demo Video](assets/thumbnail.png)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
-> ```
-
 ---
 
 ## ✨ Features
@@ -47,7 +33,7 @@ Switch between modes using the **OK Sign** gesture (hold for ~0.5 seconds):
 
 ## 🤚 Gesture Reference
 
-<!-- TODO: Add your gesture images in the assets/ folder and update the paths below -->
+
 
 | Gesture | Hand Position | Image |
 |---------|---------------|-------|
@@ -243,25 +229,6 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 - [Google MediaPipe](https://mediapipe.dev/) for the hand tracking model
 - [One Euro Filter](https://cristal.univ-lille.fr/~casiez/1euro/) algorithm for smooth cursor movement
 - The open-source community for inspiration and tools
-
----
-
-## 📸 Adding Your Own Images
-
-1. Create an `assets/` folder in the project root
-2. Add a `demo.gif` showing the controller in action
-3. Create `assets/gestures/` and add images for each gesture:
-   - `ok_sign.png`
-   - `open_palm.png`
-   - `fist.png`
-   - `index_up.png`
-   - `l_sign.png`
-   - `peace_sign.png`
-   - `rock_sign.png`
-   - `call_me.png`
-   - `pinch_middle.png`
-
-Recommended image size: **200x200 pixels** with a clean background.
 
 ---
 
