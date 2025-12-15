@@ -225,37 +225,6 @@ Wision/
 | `deadzone` | `smoothing.py` | 2.0px | Ignore movements below this |
 | `edge_margin` | `smoothing.py` | 15% | Screen edge zone for extra smoothing |
 
----
-
-## 🔬 Gesture Detection Details
-
-### Robust Detection Features
-
-The gesture recognizer uses multiple validation layers:
-
-1. **Basic Finger State Check** — Extension/curl state of each finger
-2. **Geometric Validation** — Joint angles, distances, and positions
-3. **Frame Stability** — Gesture must persist for N consecutive frames
-4. **Time Duration** — Gesture must be held for minimum seconds
-5. **Priority Ordering** — Most specific gestures checked first
-
-### L Sign Detection
-- Thumb angle at IP joint > 155° (fully straight)
-- Thumb tip distance from index MCP > 0.12 (clearly extended outward)
-- Thumb tip distance from wrist > 0.15 (not curled back)
-- Index extended, middle/ring/pinky curled
-
-### Rock Sign Detection
-- Thumb NOT extended and tucked near palm (< 0.12 from index MCP)
-- Index and pinky clearly extended
-- Middle and ring curled
-- Index-pinky spread > 0.08 (fingers apart)
-
-### Index Up Detection
-- Index finger extended with straight joints
-- Index tip above index MCP (pointing up)
-- Middle, ring, pinky all curled
-- Thumb state ignored (allows natural hand position)
 
 ---
 
