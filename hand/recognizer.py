@@ -45,13 +45,14 @@ class GestureRecognizer:
     PINCH_THRESHOLD = 0.06        # Max distance for pinch gestures
     L_SIGN_THUMB_EXTENSION = 0.12 # Min thumb-to-index-MCP distance for L sign
     L_SIGN_WRIST_DISTANCE = 0.15  # Min thumb-to-wrist distance for L sign
-    ROCK_THUMB_TUCK = 0.12        # Max thumb-to-palm distance for rock sign
-    ROCK_FINGER_SPREAD = 0.08     # Min index-pinky spread for rock sign
+    ROCK_THUMB_MAX_DIST = 0.18    # Max thumb-to-middle-MCP for rock (thumb not extended far)
+    ROCK_FINGER_SPREAD = 0.06     # Min index-pinky spread for rock sign (relaxed)
     INDEX_UP_TIP_OFFSET = 0.02    # Min vertical offset for index pointing up
     
     # Angle thresholds (degrees)
     L_SIGN_THUMB_ANGLE = 155      # Min thumb IP joint angle for L sign
     INDEX_UP_JOINT_ANGLE = 140    # Min joint angle for extended index
+    ROCK_EXTENDED_ANGLE = 120     # Min joint angle for rock sign extended fingers (relaxed)
     
     # Stability thresholds
     STABILITY_FRAMES = 3          # Min consecutive frames for gesture stability
@@ -236,51 +237,66 @@ class GestureRecognizer:
     def _is_rock_sign(self, fingers: dict, curled: dict) -> bool:
         """Rock sign: index + pinky extended, middle + ring curled, thumb tucked.
         
-        Robust detection with multi-layer validation:
-        1. Basic check: finger extension/curl states
-        2. Thumb position: must be tucked near palm, not extended
+        Improved detection with balanced validation:
+        1. Basic check: index and pinky must be extended, middle and ring curled
+        2. Thumb check: must NOT be fully extended (key differentiator from L sign)
         3. Finger spread: index and pinky should be spread apart
-        4. Joint angles: extended fingers should have straight joints
+        4. Joint angles: extended fingers should be reasonably straight
         
         This prevents confusion with:
-        - L sign (which has thumb extended)
+        - L sign (which has thumb extended outward)
         - Peace sign (which has middle extended)
-        - Call me (which has thumb extended)
+        - Call me (which has thumb extended to the side)
+        
+        Note: We focus on thumb NOT being extended rather than requiring it to
+        be very close to palm, as natural rock sign hand position varies.
         """
         if self.tracker.landmarks is None:
             return False
         
-        # Layer 1: Basic finger state checks
-        basic_check = (
-            not fingers['thumb'] and  # Thumb must NOT be extended
-            fingers['index'] and 
-            fingers['pinky'] and
-            curled['middle'] and
-            curled['ring']
-        )
-        
-        if not basic_check:
+        # Layer 1: Core finger state checks - index and pinky up, middle and ring down
+        if not fingers['index'] or not fingers['pinky']:
+            return False
+        if not curled['middle'] or not curled['ring']:
             return False
         
-        # Layer 2: Verify thumb is actually tucked/curled near palm
+        # Layer 2: Thumb must NOT be extended (key differentiator from L sign)
+        # We check this explicitly rather than relying only on fingers['thumb']
         thumb_tip = self.tracker.get_landmark(self.tracker.THUMB_TIP)
-        index_mcp = self.tracker.get_landmark(self.tracker.INDEX_MCP)
+        thumb_ip = self.tracker.get_landmark(self.tracker.THUMB_IP)
+        thumb_mcp = self.tracker.get_landmark(self.tracker.THUMB_MCP)
         middle_mcp = self.tracker.get_landmark(self.tracker.MIDDLE_MCP)
+        index_mcp = self.tracker.get_landmark(self.tracker.INDEX_MCP)
+        wrist = self.tracker.get_landmark(self.tracker.WRIST)
         
-        if thumb_tip is None or index_mcp is None:
-            return basic_check
+        if thumb_tip is not None and middle_mcp is not None:
+            # Check thumb tip is not too far from middle MCP (i.e., not extended outward)
+            thumb_to_middle = (
+                (thumb_tip[0] - middle_mcp[0])**2 + 
+                (thumb_tip[1] - middle_mcp[1])**2
+            )**0.5
+            
+            # If thumb is extended far from palm center, it's likely L sign or call me
+            if thumb_to_middle > self.ROCK_THUMB_MAX_DIST:
+                return False
         
-        # Thumb tip should be close to palm center (near index/middle MCP)
-        thumb_to_index_mcp = (
-            (thumb_tip[0] - index_mcp[0])**2 + 
-            (thumb_tip[1] - index_mcp[1])**2
-        )**0.5
-        
-        # Thumb should be tucked (distance < threshold)
-        thumb_tucked = thumb_to_index_mcp < self.ROCK_THUMB_TUCK
-        
-        if not thumb_tucked:
-            return False
+        # Also verify thumb is not in L sign position (thumb extended to side with straight angle)
+        if thumb_tip is not None and thumb_ip is not None and thumb_mcp is not None:
+            thumb_angle = self._calculate_angle(thumb_mcp, thumb_ip, thumb_tip)
+            if thumb_angle > 160:  # Very straight thumb = likely L sign
+                # Additional check: is thumb pointing away from hand?
+                if wrist is not None and index_mcp is not None:
+                    thumb_to_wrist = (
+                        (thumb_tip[0] - wrist[0])**2 + 
+                        (thumb_tip[1] - wrist[1])**2
+                    )**0.5
+                    thumb_to_index = (
+                        (thumb_tip[0] - index_mcp[0])**2 + 
+                        (thumb_tip[1] - index_mcp[1])**2
+                    )**0.5
+                    # If thumb is far from wrist and index, it's extended outward
+                    if thumb_to_wrist > 0.15 and thumb_to_index > 0.12:
+                        return False
         
         # Layer 3: Check that index and pinky tips are spread apart
         index_tip = self.tracker.get_landmark(self.tracker.INDEX_TIP)
@@ -291,22 +307,16 @@ class GestureRecognizer:
                 (index_tip[0] - pinky_tip[0])**2 + 
                 (index_tip[1] - pinky_tip[1])**2
             )**0.5
-            good_spread = finger_spread > self.ROCK_FINGER_SPREAD
-        else:
-            good_spread = True
+            if finger_spread < self.ROCK_FINGER_SPREAD:
+                return False
         
-        if not good_spread:
-            return False
-        
-        # Layer 4: Verify index and pinky are clearly extended (joint angles)
+        # Layer 4: Verify index and pinky are reasonably extended (relaxed angle check)
         index_pip = self.tracker.get_landmark(self.tracker.INDEX_PIP)
         index_dip = self.tracker.get_landmark(self.tracker.INDEX_DIP)
-        pinky_pip = self.tracker.get_landmark(self.tracker.PINKY_PIP)
-        pinky_dip = self.tracker.get_landmark(self.tracker.PINKY_DIP)
         
-        if None not in (index_tip, index_pip, index_dip, index_mcp):
+        if index_tip is not None and index_pip is not None and index_dip is not None and index_mcp is not None:
             index_pip_angle = self._calculate_angle(index_mcp, index_pip, index_dip)
-            if index_pip_angle < 130:  # Index should be relatively straight
+            if index_pip_angle < self.ROCK_EXTENDED_ANGLE:  # Relaxed from 130 to 120
                 return False
         
         return True
