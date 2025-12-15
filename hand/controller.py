@@ -125,7 +125,7 @@ class HandGestureController:
                 
                 # L_SIGN (thumb + index) triggers left click with time-based check
                 if gesture == Gesture.L_SIGN:
-                    if self.recognizer.is_gesture_ready(2, 0.15):
+                    if self.recognizer.is_gesture_ready(2, 0.8):
                         self.actions.left_click()
     
     def _execute_gesture_action(self, gesture: Gesture):
@@ -147,11 +147,11 @@ class HandGestureController:
         self._handle_cursor_movement(gesture)
                 
         if gesture == Gesture.PINCH_MIDDLE:
-            if self.recognizer.is_gesture_ready(3, 0.15):
+            if self.recognizer.is_gesture_ready(3, 0.35):
                 self.actions.left_click()
                 
         elif gesture == Gesture.ROCK_SIGN:
-            if self.recognizer.is_gesture_ready(3, 0.2):
+            if self.recognizer.is_gesture_ready(3, 0.82):
                 self.actions.right_click()
                 
         elif gesture == Gesture.CALL_ME:
@@ -187,19 +187,19 @@ class HandGestureController:
         self._handle_cursor_movement(gesture)
                 
         if gesture == Gesture.OPEN_PALM:
-            if self.recognizer.is_gesture_ready(5, 1):
+            if self.recognizer.is_gesture_ready(5, 1.5):
                 self.actions.maximize_window()
                 
         elif gesture == Gesture.GRAB:
-            if self.recognizer.is_gesture_ready(5, 1):
+            if self.recognizer.is_gesture_ready(5, 1.5):
                 self.actions.minimize_window()
                 
         elif gesture == Gesture.ROCK_SIGN:
-            if self.recognizer.is_gesture_ready(3, 0.2):
+            if self.recognizer.is_gesture_ready(3, 0.62):
                 self.actions.switch_window()
                 
         elif gesture == Gesture.PINCH_MIDDLE:
-            if self.recognizer.is_gesture_ready(3, 0.2):
+            if self.recognizer.is_gesture_ready(3, 0.52):
                 self.actions.show_desktop()
                 
         elif gesture == Gesture.CALL_ME:
@@ -207,7 +207,7 @@ class HandGestureController:
                 self.actions.close_window()
                 
         elif gesture == Gesture.PEACE_SIGN:
-            if self.recognizer.is_gesture_ready(5, 0.3):
+            if self.recognizer.is_gesture_ready(5, 0.83):
                 self.actions.take_screenshot()
     
     def _handle_media_mode(self, gesture: Gesture):
