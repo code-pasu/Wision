@@ -123,9 +123,9 @@ class HandGestureController:
             if pos:
                 self.actions.move_cursor_relative(pos[0], pos[1])
                 
-                # L_SIGN (thumb + index) triggers left click with time-based check
+                # L_SIGN (thumb + index) triggers left click
                 if gesture == Gesture.L_SIGN:
-                    if self.recognizer.is_gesture_ready(2, 0.8):
+                    if self.recognizer.is_gesture_ready(3, 0.2):
                         self.actions.left_click()
     
     def _execute_gesture_action(self, gesture: Gesture):

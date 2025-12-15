@@ -10,9 +10,10 @@ Usage:
 Controls:
     OK Sign (hold) -- Switch between control modes
     Q or ESC       -- Quit the application
-"""
+""" 
 
 from hand.hand import HandGestureController, main
 
 if __name__ == '__main__':
     main()
+ 

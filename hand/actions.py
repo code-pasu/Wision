@@ -63,14 +63,14 @@ class ActionController:
     def __init__(self):
         self.current_mode = ControlMode.CURSOR
         self.screen_width, self.screen_height = pyautogui.size()
-        self.smoother = AdaptiveSmoother()
+        self.smoother = AdaptiveSmoother(self.screen_width, self.screen_height)
         
         # Action cooldowns (in seconds)
         self.cooldowns = {
             ActionType.MODE_SWITCH: 0.8,
-            ActionType.LEFT_CLICK: 0.3,
-            ActionType.RIGHT_CLICK: 0.5,
-            ActionType.DOUBLE_CLICK: 0.5,
+            ActionType.LEFT_CLICK: 0.5,   # Increased to prevent accidental double clicks
+            ActionType.RIGHT_CLICK: 0.7,  # Increased to prevent accidental double clicks
+            ActionType.DOUBLE_CLICK: 0.6,
             ActionType.MIDDLE_CLICK: 0.5,
             ActionType.MAXIMIZE: 0.8,
             ActionType.MINIMIZE: 0.8,
