@@ -103,8 +103,8 @@ class HandGestureController:
             # Draw landmarks
             frame = self.tracker.draw_landmarks(frame)
             
-            # Handle OK sign for mode switching
-            if gesture == Gesture.OK_SIGN and self.recognizer.is_gesture_stable(5):
+            # Handle OK sign for mode switching (requires both frames AND time)
+            if gesture == Gesture.OK_SIGN and self.recognizer.is_gesture_ready(5, 0.3):
                 self.actions.switch_mode()
             elif gesture != Gesture.OK_SIGN and gesture != Gesture.NONE:
                 # Execute gesture actions based on mode
@@ -123,9 +123,9 @@ class HandGestureController:
             if pos:
                 self.actions.move_cursor_relative(pos[0], pos[1])
                 
-                # L_SIGN (thumb + index) triggers left click
+                # L_SIGN (thumb + index) triggers left click with time-based check
                 if gesture == Gesture.L_SIGN:
-                    if self.recognizer.is_gesture_stable(2):
+                    if self.recognizer.is_gesture_ready(2, 0.15):
                         self.actions.left_click()
     
     def _execute_gesture_action(self, gesture: Gesture):
@@ -147,24 +147,26 @@ class HandGestureController:
         self._handle_cursor_movement(gesture)
                 
         if gesture == Gesture.PINCH_MIDDLE:
-            if self.recognizer.is_gesture_stable(3):
+            if self.recognizer.is_gesture_ready(3, 0.15):
                 self.actions.left_click()
                 
         elif gesture == Gesture.ROCK_SIGN:
-            if self.recognizer.is_gesture_stable(3):
+            if self.recognizer.is_gesture_ready(3, 0.2):
                 self.actions.right_click()
                 
         elif gesture == Gesture.CALL_ME:
-            if self.recognizer.is_gesture_stable(5):
+            if self.recognizer.is_gesture_ready(5, 0.25):
                 self.actions.double_click()
                 
         elif gesture == Gesture.PEACE_SIGN:
-            angle = self.tracker.get_peace_sign_angle()
-            if angle is not None:
-                self.actions.scroll_by_angle(angle)
+            # Scroll requires time-based check to avoid accidental scrolls
+            if self.recognizer.is_gesture_held_for(0.1):
+                angle = self.tracker.get_peace_sign_angle()
+                if angle is not None:
+                    self.actions.scroll_by_angle(angle)
         
         elif gesture == Gesture.RING_CURL:
-            if self.recognizer.is_gesture_stable(3):
+            if self.recognizer.is_gesture_ready(3, 0.2):
                 self.actions.middle_click()
     
     def _handle_scroll_mode(self, gesture: Gesture):
@@ -173,9 +175,11 @@ class HandGestureController:
         self._handle_cursor_movement(gesture)
                 
         if gesture == Gesture.PEACE_SIGN:
-            angle = self.tracker.get_peace_sign_angle()
-            if angle is not None:
-                self.actions.scroll_by_angle(angle)
+            # Scroll requires time-based check to avoid accidental scrolls
+            if self.recognizer.is_gesture_held_for(0.1):
+                angle = self.tracker.get_peace_sign_angle()
+                if angle is not None:
+                    self.actions.scroll_by_angle(angle)
     
     def _handle_window_mode(self, gesture: Gesture):
         """Handle window mode gestures."""
@@ -183,27 +187,27 @@ class HandGestureController:
         self._handle_cursor_movement(gesture)
                 
         if gesture == Gesture.OPEN_PALM:
-            if self.recognizer.is_gesture_stable(5):
+            if self.recognizer.is_gesture_ready(5, 1):
                 self.actions.maximize_window()
                 
         elif gesture == Gesture.GRAB:
-            if self.recognizer.is_gesture_stable(5):
+            if self.recognizer.is_gesture_ready(5, 1):
                 self.actions.minimize_window()
                 
         elif gesture == Gesture.ROCK_SIGN:
-            if self.recognizer.is_gesture_stable(3):
+            if self.recognizer.is_gesture_ready(3, 0.2):
                 self.actions.switch_window()
                 
         elif gesture == Gesture.PINCH_MIDDLE:
-            if self.recognizer.is_gesture_stable(3):
+            if self.recognizer.is_gesture_ready(3, 0.2):
                 self.actions.show_desktop()
                 
         elif gesture == Gesture.CALL_ME:
-            if self.recognizer.is_gesture_stable(8):
+            if self.recognizer.is_gesture_ready(8, 0.5):
                 self.actions.close_window()
                 
         elif gesture == Gesture.PEACE_SIGN:
-            if self.recognizer.is_gesture_stable(5):
+            if self.recognizer.is_gesture_ready(5, 0.3):
                 self.actions.take_screenshot()
     
     def _handle_media_mode(self, gesture: Gesture):
@@ -212,21 +216,25 @@ class HandGestureController:
         self._handle_cursor_movement(gesture)
         
         if gesture == Gesture.OPEN_PALM:
-            if self.recognizer.is_gesture_stable(3):
+            if self.recognizer.is_gesture_ready(3, 0.2):
                 self.actions.play_pause()
                 
         elif gesture == Gesture.PEACE_SIGN:
-            if self.recognizer.is_gesture_stable(3):
+            if self.recognizer.is_gesture_ready(3, 0.2):
                 self.actions.prev_track()
                 
         elif gesture == Gesture.PINCH_MIDDLE:
-            self.actions.volume_up()
+            # Volume control with minimal delay for responsiveness
+            if self.recognizer.is_gesture_held_for(0.1):
+                self.actions.volume_up()
             
         elif gesture == Gesture.ROCK_SIGN:
-            self.actions.volume_down()
+            # Volume control with minimal delay for responsiveness
+            if self.recognizer.is_gesture_held_for(0.1):
+                self.actions.volume_down()
             
         elif gesture == Gesture.GRAB:
-            if self.recognizer.is_gesture_stable(5):
+            if self.recognizer.is_gesture_ready(5, 0.3):
                 self.actions.mute()
     
     def draw_ui(self, frame, gesture: Gesture):

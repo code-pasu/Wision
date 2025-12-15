@@ -22,11 +22,17 @@ class GestureRecognizer:
     OK_SIGN_THRESHOLD = 0.05  # Tighter threshold for OK sign
     PINCH_THRESHOLD = 0.06
     STABILITY_FRAMES = 3
+    MIN_GESTURE_DURATION = 0.15  # Minimum seconds a gesture must be held (default 150ms)
     
-    def __init__(self, tracker: HandTracker):
+    def __init__(self, tracker: HandTracker, min_gesture_duration: float = None):
         self.tracker = tracker
         self.current_state: Optional[GestureState] = None
         self.frame_count = 0
+        # Allow custom duration threshold
+        if min_gesture_duration is not None:
+            self.min_gesture_duration = min_gesture_duration
+        else:
+            self.min_gesture_duration = self.MIN_GESTURE_DURATION
         
     def recognize(self) -> Gesture:
         """Recognize current gesture with priority ordering."""
@@ -218,11 +224,41 @@ class GestureRecognizer:
         return gesture
     
     def is_gesture_stable(self, min_frames: int = None) -> bool: # type: ignore
-        """Check if current gesture is stable."""
+        """Check if current gesture is stable (frame-based)."""
         if self.current_state is None:
             return False
         min_frames = min_frames or self.STABILITY_FRAMES
         return self.current_state.stable_frames >= min_frames
+    
+    def is_gesture_held_for(self, min_duration: float = None) -> bool:
+        """Check if current gesture has been held for minimum duration (time-based).
+        
+        Args:
+            min_duration: Minimum time in seconds the gesture must be held.
+                         If None, uses the instance's min_gesture_duration.
+        
+        Returns:
+            True if gesture has been held for at least min_duration seconds.
+        """
+        if self.current_state is None:
+            return False
+        min_duration = min_duration if min_duration is not None else self.min_gesture_duration
+        return self.current_state.duration() >= min_duration
+    
+    def is_gesture_ready(self, min_frames: int = None, min_duration: float = None) -> bool:
+        """Check if gesture is stable AND held for minimum duration.
+        
+        This combines both frame-based and time-based checks to prevent
+        false triggers from momentary gestures.
+        
+        Args:
+            min_frames: Minimum consecutive frames (default: STABILITY_FRAMES)
+            min_duration: Minimum duration in seconds (default: min_gesture_duration)
+        
+        Returns:
+            True if both stability and duration requirements are met.
+        """
+        return self.is_gesture_stable(min_frames) and self.is_gesture_held_for(min_duration)
     
     def get_gesture_duration(self) -> float:
         """Get how long current gesture has been held."""
