@@ -2,37 +2,73 @@
 Gesture recognition from hand tracking data.
 
 This module provides the GestureRecognizer class which:
-- Analyzes finger states and distances to classify gestures
+- Analyzes finger states, joint angles, and distances to classify gestures
 - Uses priority-ordered detection to avoid misclassification
-- Tracks gesture stability (consecutive frames) before triggering actions
+- Implements multi-layer validation (basic + geometric + temporal)
+- Tracks gesture stability (consecutive frames) and duration (time-based)
 
-Gestures are checked from most specific to most general.
+Detection Pipeline:
+1. Basic finger state check (extended/curled)
+2. Geometric validation (angles, distances, positions)
+3. Frame stability check (N consecutive frames)
+4. Time duration check (minimum hold time)
+
+Gestures are checked from most specific to most general to prevent
+ambiguous classifications.
 """
 
 import time
+import numpy as np
 from typing import Optional
 from .tracker import HandTracker
 from .gestures import Gesture, GestureState
 
 
 class GestureRecognizer:
-    """Recognizes gestures from hand tracking data."""
+    """
+    Recognizes hand gestures from tracking data with robust multi-layer validation.
     
-    # Thresholds
-    OK_SIGN_THRESHOLD = 0.05  # Tighter threshold for OK sign
-    PINCH_THRESHOLD = 0.06
-    STABILITY_FRAMES = 3
-    MIN_GESTURE_DURATION = 0.15  # Minimum seconds a gesture must be held (default 150ms)
+    Features:
+    - Priority-ordered gesture detection (specific → general)
+    - Geometric validation using joint angles and landmark distances
+    - Frame-based stability tracking
+    - Time-based duration thresholds to prevent false triggers
+    
+    Attributes:
+        tracker: HandTracker instance providing landmark data
+        current_state: Current GestureState for stability/duration tracking
+        min_gesture_duration: Minimum seconds a gesture must be held
+    """
+    
+    # Distance thresholds (normalized to hand size)
+    OK_SIGN_THRESHOLD = 0.05      # Max thumb-index distance for OK sign
+    PINCH_THRESHOLD = 0.06        # Max distance for pinch gestures
+    L_SIGN_THUMB_EXTENSION = 0.12 # Min thumb-to-index-MCP distance for L sign
+    L_SIGN_WRIST_DISTANCE = 0.15  # Min thumb-to-wrist distance for L sign
+    ROCK_THUMB_TUCK = 0.12        # Max thumb-to-palm distance for rock sign
+    ROCK_FINGER_SPREAD = 0.08     # Min index-pinky spread for rock sign
+    INDEX_UP_TIP_OFFSET = 0.02    # Min vertical offset for index pointing up
+    
+    # Angle thresholds (degrees)
+    L_SIGN_THUMB_ANGLE = 155      # Min thumb IP joint angle for L sign
+    INDEX_UP_JOINT_ANGLE = 140    # Min joint angle for extended index
+    
+    # Stability thresholds
+    STABILITY_FRAMES = 3          # Min consecutive frames for gesture stability
+    MIN_GESTURE_DURATION = 0.15   # Default min seconds for gesture activation
     
     def __init__(self, tracker: HandTracker, min_gesture_duration: Optional[float] = None):
+        """
+        Initialize the gesture recognizer.
+        
+        Args:
+            tracker: HandTracker instance for landmark data
+            min_gesture_duration: Optional custom duration threshold (seconds)
+        """
         self.tracker = tracker
         self.current_state: Optional[GestureState] = None
         self.frame_count = 0
-        # Allow custom duration threshold
-        if min_gesture_duration is not None:
-            self.min_gesture_duration = min_gesture_duration
-        else:
-            self.min_gesture_duration = self.MIN_GESTURE_DURATION
+        self.min_gesture_duration = min_gesture_duration or self.MIN_GESTURE_DURATION
         
     def recognize(self) -> Gesture:
         """Recognize current gesture with priority ordering."""
@@ -110,17 +146,23 @@ class GestureRecognizer:
         )
     
     def _is_l_sign(self, fingers: dict, curled: dict) -> bool:
-        """Thumb and index extended (L shape), others curled.
+        """L Sign: thumb + index fully extended, forming an L shape.
         
-        Stricter detection requiring fully extended thumb:
-        - Thumb must be clearly extended away from palm
-        - Index must be extended
-        - Other fingers must be curled
+        Robust detection with strict thumb extension validation:
+        1. Basic check: thumb and index extended, others curled
+        2. Thumb angle: IP joint must be very straight (> 155°)
+        3. Thumb extension: tip must be far from index MCP (> 0.12)
+        4. Thumb position: tip must be away from wrist (> 0.15)
+        
+        This strict validation prevents false triggers when:
+        - Thumb is only partially extended
+        - Thumb is resting near the palm
+        - Transitioning from other gestures
         """
         if self.tracker.landmarks is None:
             return False
         
-        # Basic finger state checks
+        # Layer 1: Basic finger state checks
         basic_check = (
             fingers['thumb'] and
             fingers['index'] and
@@ -132,7 +174,7 @@ class GestureRecognizer:
         if not basic_check:
             return False
         
-        # Additional strict check: thumb must be FULLY extended
+        # Layer 2: Get thumb landmarks for geometric validation
         thumb_tip = self.tracker.get_landmark(self.tracker.THUMB_TIP)
         thumb_ip = self.tracker.get_landmark(self.tracker.THUMB_IP)
         thumb_mcp = self.tracker.get_landmark(self.tracker.THUMB_MCP)
@@ -142,36 +184,42 @@ class GestureRecognizer:
         if None in (thumb_tip, thumb_ip, thumb_mcp, index_mcp, wrist):
             return basic_check
         
-        # Calculate thumb angle at IP joint - must be very straight (> 155 degrees)
+        # Layer 3: Thumb angle at IP joint - must be very straight
         thumb_angle = self._calculate_angle(thumb_mcp, thumb_ip, thumb_tip)
-        if thumb_angle < 155:
+        if thumb_angle < self.L_SIGN_THUMB_ANGLE:
             return False
         
-        # Thumb tip must be far from index MCP (thumb extended outward)
+        # Layer 4: Thumb tip must be far from index MCP (extended outward)
         thumb_to_index_mcp = (
             (thumb_tip[0] - index_mcp[0])**2 +  # type: ignore
             (thumb_tip[1] - index_mcp[1])**2  # type: ignore
         )**0.5
         
-        # Require minimum distance (thumb clearly extended, not just slightly out)
-        if thumb_to_index_mcp < 0.12:
+        if thumb_to_index_mcp < self.L_SIGN_THUMB_EXTENSION:
             return False
         
-        # Thumb tip should also be away from wrist (not curled back)
+        # Layer 5: Thumb tip should be away from wrist (not curled back)
         thumb_to_wrist = (
             (thumb_tip[0] - wrist[0])**2 +  # type: ignore
             (thumb_tip[1] - wrist[1])**2  # type: ignore
         )**0.5
         
-        # Thumb should be extended away from wrist
-        if thumb_to_wrist < 0.15:
+        if thumb_to_wrist < self.L_SIGN_WRIST_DISTANCE:
             return False
         
         return True
     
     def _calculate_angle(self, p1, p2, p3) -> float:
-        """Calculate angle at p2 between p1-p2-p3."""
-        import numpy as np
+        """Calculate angle at p2 between vectors p1-p2 and p2-p3.
+        
+        Uses 2D projection for stability (ignores Z depth).
+        
+        Args:
+            p1, p2, p3: Landmark coordinates (x, y, z)
+            
+        Returns:
+            Angle in degrees at p2 (0-180)
+        """
         v1 = np.array([p1[0] - p2[0], p1[1] - p2[1]])
         v2 = np.array([p3[0] - p2[0], p3[1] - p2[1]])
         
@@ -186,17 +234,23 @@ class GestureRecognizer:
         return float(np.degrees(np.arccos(cos_angle)))
     
     def _is_rock_sign(self, fingers: dict, curled: dict) -> bool:
-        """Index and pinky extended, middle and ring curled, NO thumb.
+        """Rock sign: index + pinky extended, middle + ring curled, thumb tucked.
         
-        Improved detection with additional checks:
-        - Thumb must be curled/tucked (not extended)
-        - Middle and ring must be clearly curled
-        - Index and pinky must be clearly extended
+        Robust detection with multi-layer validation:
+        1. Basic check: finger extension/curl states
+        2. Thumb position: must be tucked near palm, not extended
+        3. Finger spread: index and pinky should be spread apart
+        4. Joint angles: extended fingers should have straight joints
+        
+        This prevents confusion with:
+        - L sign (which has thumb extended)
+        - Peace sign (which has middle extended)
+        - Call me (which has thumb extended)
         """
         if self.tracker.landmarks is None:
             return False
         
-        # Basic finger state checks
+        # Layer 1: Basic finger state checks
         basic_check = (
             not fingers['thumb'] and  # Thumb must NOT be extended
             fingers['index'] and 
@@ -208,35 +262,63 @@ class GestureRecognizer:
         if not basic_check:
             return False
         
-        # Additional check: verify thumb is actually tucked/curled near palm
+        # Layer 2: Verify thumb is actually tucked/curled near palm
         thumb_tip = self.tracker.get_landmark(self.tracker.THUMB_TIP)
         index_mcp = self.tracker.get_landmark(self.tracker.INDEX_MCP)
-        pinky_mcp = self.tracker.get_landmark(self.tracker.PINKY_MCP)
+        middle_mcp = self.tracker.get_landmark(self.tracker.MIDDLE_MCP)
         
-        if thumb_tip is None or index_mcp is None or pinky_mcp is None:
+        if thumb_tip is None or index_mcp is None:
             return basic_check
         
-        # Thumb tip should be relatively close to palm (near index MCP)
-        thumb_to_index_mcp = ((thumb_tip[0] - index_mcp[0])**2 + (thumb_tip[1] - index_mcp[1])**2)**0.5
+        # Thumb tip should be close to palm center (near index/middle MCP)
+        thumb_to_index_mcp = (
+            (thumb_tip[0] - index_mcp[0])**2 + 
+            (thumb_tip[1] - index_mcp[1])**2
+        )**0.5
         
-        # Thumb should be tucked (distance < 0.12 normalized)
-        thumb_tucked = thumb_to_index_mcp < 0.12
+        # Thumb should be tucked (distance < threshold)
+        thumb_tucked = thumb_to_index_mcp < self.ROCK_THUMB_TUCK
         
-        # Additional: Check that index and pinky tips are spread apart
+        if not thumb_tucked:
+            return False
+        
+        # Layer 3: Check that index and pinky tips are spread apart
         index_tip = self.tracker.get_landmark(self.tracker.INDEX_TIP)
         pinky_tip = self.tracker.get_landmark(self.tracker.PINKY_TIP)
         
         if index_tip is not None and pinky_tip is not None:
-            # Index and pinky should be reasonably spread for rock sign
-            finger_spread = ((index_tip[0] - pinky_tip[0])**2 + (index_tip[1] - pinky_tip[1])**2)**0.5
-            good_spread = finger_spread > 0.08  # Minimum spread
+            finger_spread = (
+                (index_tip[0] - pinky_tip[0])**2 + 
+                (index_tip[1] - pinky_tip[1])**2
+            )**0.5
+            good_spread = finger_spread > self.ROCK_FINGER_SPREAD
         else:
             good_spread = True
         
-        return basic_check and thumb_tucked and good_spread
+        if not good_spread:
+            return False
+        
+        # Layer 4: Verify index and pinky are clearly extended (joint angles)
+        index_pip = self.tracker.get_landmark(self.tracker.INDEX_PIP)
+        index_dip = self.tracker.get_landmark(self.tracker.INDEX_DIP)
+        pinky_pip = self.tracker.get_landmark(self.tracker.PINKY_PIP)
+        pinky_dip = self.tracker.get_landmark(self.tracker.PINKY_DIP)
+        
+        if None not in (index_tip, index_pip, index_dip, index_mcp):
+            index_pip_angle = self._calculate_angle(index_mcp, index_pip, index_dip)
+            if index_pip_angle < 130:  # Index should be relatively straight
+                return False
+        
+        return True
     
     def _is_call_me(self, fingers: dict, curled: dict) -> bool:
-        """Thumb and pinky extended, others curled."""
+        """Call me sign: thumb + pinky extended, others curled.
+        
+        Detection requires:
+        - Thumb clearly extended outward
+        - Pinky clearly extended
+        - Index, middle, ring all curled
+        """
         return (
             fingers['thumb'] and
             fingers['pinky'] and
@@ -257,7 +339,13 @@ class GestureRecognizer:
         )
     
     def _is_peace_sign(self, fingers: dict, curled: dict) -> bool:
-        """Index and middle extended, ring and pinky curled."""
+        """Index and middle extended, ring and pinky curled.
+        
+        Validation:
+        - Index and middle fingers clearly extended
+        - Ring and pinky fingers clearly curled
+        - Thumb state ignored (can be in any position)
+        """
         return (
             fingers['index'] and
             fingers['middle'] and
@@ -266,16 +354,67 @@ class GestureRecognizer:
         )
     
     def _is_index_up(self, fingers: dict) -> bool:
-        """Index extended (used for cursor control)."""
-        return (
+        """Index finger extended for cursor control.
+        
+        Robust detection with geometric validation:
+        - Index finger must be clearly extended (straight joints)
+        - Index fingertip should be above index MCP (pointing upward)
+        - Middle, ring, and pinky must be curled
+        - Thumb state is ignored (allows natural hand position)
+        
+        This prevents false triggers from partially extended fingers
+        or when transitioning between gestures.
+        """
+        if self.tracker.landmarks is None:
+            return False
+        
+        # Basic finger state check
+        basic_check = (
             fingers['index'] and
             not fingers['middle'] and
             not fingers['ring'] and
             not fingers['pinky']
         )
+        
+        if not basic_check:
+            return False
+        
+        # Geometric validation: index tip should be above index MCP
+        index_tip = self.tracker.get_landmark(self.tracker.INDEX_TIP)
+        index_mcp = self.tracker.get_landmark(self.tracker.INDEX_MCP)
+        index_pip = self.tracker.get_landmark(self.tracker.INDEX_PIP)
+        index_dip = self.tracker.get_landmark(self.tracker.INDEX_DIP)
+        
+        if None in (index_tip, index_mcp, index_pip, index_dip):
+            return basic_check
+        
+        # Check that index finger joints are relatively straight
+        pip_angle = self._calculate_angle(index_mcp, index_pip, index_dip)
+        dip_angle = self._calculate_angle(index_pip, index_dip, index_tip)
+        
+        # Both angles should be > 140 degrees for extended finger
+        if pip_angle < self.INDEX_UP_JOINT_ANGLE or dip_angle < self.INDEX_UP_JOINT_ANGLE:
+            return False
+        
+        # Index tip should be above (lower Y value) or at same level as MCP
+        # Allow small tolerance for horizontal pointing
+        tip_above_mcp = index_tip[1] <= index_mcp[1] + self.INDEX_UP_TIP_OFFSET  # type: ignore
+        
+        # Additional: check that index tip is away from palm (finger extended outward)
+        wrist = self.tracker.get_landmark(self.tracker.WRIST)
+        if wrist is not None:
+            tip_to_wrist = ((index_tip[0] - wrist[0])**2 + (index_tip[1] - wrist[1])**2)**0.5  # type: ignore
+            # Index tip should be reasonably far from wrist
+            if tip_to_wrist < 0.15:
+                return False
+        
+        return tip_above_mcp
     
     def _is_ring_curl(self, fingers: dict, curled: dict) -> bool:
-        """Only ring finger curled, others extended."""
+        """Ring curl: only ring finger curled, all others extended.
+        
+        Used for middle-click in cursor mode.
+        """
         return (
             fingers['thumb'] and
             fingers['index'] and
@@ -285,7 +424,10 @@ class GestureRecognizer:
         )
     
     def _is_middle_curl(self, fingers: dict, curled: dict) -> bool:
-        """Only middle finger curled, others extended."""
+        """Middle curl: only middle finger curled, all others extended.
+        
+        Used for scroll-click in cursor mode.
+        """
         return (
             fingers['thumb'] and
             fingers['index'] and
@@ -295,7 +437,7 @@ class GestureRecognizer:
         )
     
     def _is_pinky_curl(self, fingers: dict, curled: dict) -> bool:
-        """Only pinky curled, others extended."""
+        """Pinky curl: only pinky finger curled, all others extended."""
         return (
             fingers['thumb'] and
             fingers['index'] and
@@ -305,17 +447,27 @@ class GestureRecognizer:
         )
     
     def _is_open_palm(self, fingers: dict) -> bool:
-        """All 5 fingers extended."""
+        """Open palm: all 5 fingers fully extended.
+        
+        Used for maximize (window mode) or play/pause (media mode).
+        """
         return all(fingers.values())
     
     def _is_grab(self, fingers: dict, curled: dict) -> bool:
-        """Closed or semi-closed hand (merged fist and grab)."""
-        # At least 3 fingers curled
+        """Grab/Fist: closed or semi-closed hand.
+        
+        Detection: at least 3 of 4 fingers (excluding thumb) are curled.
+        Used for drag (cursor), minimize (window), or mute (media).
+        """
         curled_count = sum([curled['index'], curled['middle'], curled['ring'], curled['pinky']])
         return curled_count >= 3
     
     def _update_state(self, gesture: Gesture) -> Gesture:
-        """Update gesture state for stability tracking."""
+        """Update gesture state for stability and duration tracking.
+        
+        Creates a new GestureState when gesture changes, or increments
+        stable_frames when the same gesture persists.
+        """
         if self.current_state is None or self.current_state.gesture != gesture:
             self.current_state = GestureState(
                 gesture=gesture,
@@ -330,7 +482,14 @@ class GestureRecognizer:
         return gesture
     
     def is_gesture_stable(self, min_frames: Optional[int] = None) -> bool:
-        """Check if current gesture is stable (frame-based)."""
+        """Check if current gesture is stable (frame-based).
+        
+        Args:
+            min_frames: Minimum consecutive frames required (default: STABILITY_FRAMES)
+            
+        Returns:
+            True if gesture has been detected for at least min_frames consecutive frames.
+        """
         if self.current_state is None:
             return False
         min_frames = min_frames or self.STABILITY_FRAMES
@@ -355,7 +514,7 @@ class GestureRecognizer:
         """Check if gesture is stable AND held for minimum duration.
         
         This combines both frame-based and time-based checks to prevent
-        false triggers from momentary gestures.
+        false triggers from momentary gestures. Both conditions must be met.
         
         Args:
             min_frames: Minimum consecutive frames (default: STABILITY_FRAMES)

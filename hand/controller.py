@@ -1,12 +1,27 @@
 """
 Main hand gesture controller.
 
-This module provides the HandGestureController class which:
-- Orchestrates the full pipeline: capture -> track -> recognize -> act -> display
-- Maps gestures to actions based on the current control mode
-- Renders a real-time UI overlay showing mode, gesture, and controls
+This module provides the HandGestureController class which orchestrates
+the complete gesture control pipeline:
 
-Entry points:
+Pipeline:
+    Webcam → Tracker → Recognizer → Actions → Display
+    (OpenCV)  (MediaPipe)  (Rules)   (PyAutoGUI)  (UI Overlay)
+
+Features:
+- Real-time hand tracking and gesture recognition
+- Mode-based gesture-to-action mapping
+- Time-based and frame-based gesture validation
+- Visual feedback with on-screen UI overlay
+- Configurable gesture thresholds and cooldowns
+
+Control Modes:
+- CURSOR: Mouse movement, clicks, scrolling
+- SCROLL: Dedicated angle-based scrolling
+- WINDOW: Window management (maximize, minimize, switch, close)
+- MEDIA: Media playback control (play/pause, volume, tracks)
+
+Entry Points:
 - HandGestureController().run()  -- Start the controller
 - main()                         -- Convenience function
 """

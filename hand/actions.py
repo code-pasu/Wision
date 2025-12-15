@@ -3,11 +3,26 @@ Action controller for executing system commands.
 
 This module provides the ActionController class which:
 - Translates gestures into OS actions via PyAutoGUI
-- Manages control mode switching (CURSOR -> SCROLL -> WINDOW -> MEDIA)
-- Implements cooldowns to prevent action spam
-- Provides smooth relative cursor movement
+- Manages control mode switching (CURSOR → SCROLL → WINDOW → MEDIA)
+- Implements action cooldowns to prevent accidental repeated triggers
+- Provides smooth relative cursor movement with adaptive smoothing
 
-Supported actions: mouse clicks, scrolling, hotkeys, media keys.
+Key Features:
+- Configurable cooldown timers per action type
+- Mode switch protection period (ignores actions briefly after mode change)
+- Relative cursor control with sensitivity multiplier
+- Integration with AdaptiveSmoother for jitter-free movement
+
+Supported Actions:
+- Mouse: click, right-click, middle-click, double-click, drag
+- Scroll: angle-based scrolling via peace sign
+- Keyboard: hotkeys for window management (Win+Up, Alt+Tab, etc.)
+- Media: play/pause, volume, track navigation
+
+Cooldown System:
+- Each action type has a configurable cooldown (in seconds)
+- Actions are blocked if called within their cooldown period
+- This prevents accidental double-clicks and rapid action spam
 """
 
 import time

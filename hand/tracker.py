@@ -2,13 +2,25 @@
 Hand tracking using Google MediaPipe.
 
 This module provides the HandTracker class which:
-- Captures hand landmarks (21 points) from video frames
+- Captures 21 hand landmarks from video frames using MediaPipe
 - Computes finger extension/curl states based on joint angles
-- Calculates fingertip distances for pinch detection
-- Measures peace sign tilt angle for scroll direction
+- Calculates fingertip distances for pinch/OK sign detection
+- Measures peace sign tilt angle for scroll direction control
 
-The 21 landmarks follow MediaPipe's hand model:
-https://developers.google.com/mediapipe/solutions/vision/hand_landmarker
+Landmark Indices (MediaPipe hand model):
+    0: WRIST
+    1-4: THUMB (CMC, MCP, IP, TIP)
+    5-8: INDEX (MCP, PIP, DIP, TIP)
+    9-12: MIDDLE (MCP, PIP, DIP, TIP)
+    13-16: RING (MCP, PIP, DIP, TIP)
+    17-20: PINKY (MCP, PIP, DIP, TIP)
+
+Finger State Detection:
+- Extended: Joint angles > 140° (relatively straight)
+- Curled: PIP joint angle < 150° (bent)
+- Thumb uses special logic (angle + distance from palm)
+
+Reference: https://developers.google.com/mediapipe/solutions/vision/hand_landmarker
 """
 
 import cv2
@@ -18,9 +30,22 @@ from typing import Optional, Tuple, List, Dict
 
 
 class HandTracker:
-    """Tracks hand landmarks using MediaPipe."""
+    """
+    Tracks hand landmarks using Google MediaPipe.
     
-    # Landmark indices
+    This class wraps MediaPipe's hand tracking solution and provides
+    convenient methods for gesture recognition:
+    - Landmark access (normalized and pixel coordinates)
+    - Finger extension/curl state detection
+    - Fingertip distance calculations
+    - Peace sign angle measurement
+    
+    Attributes:
+        landmarks: Current frame's 21 hand landmarks (or None)
+        handedness: 'Left' or 'Right' (or None)
+    """
+    
+    # Landmark indices (MediaPipe convention)
     WRIST = 0
     THUMB_CMC = 1
     THUMB_MCP = 2
@@ -49,6 +74,14 @@ class HandTracker:
         tracking_confidence: float = 0.7,
         max_hands: int = 1
     ):
+        """
+        Initialize the hand tracker.
+        
+        Args:
+            detection_confidence: Min confidence for initial hand detection (0-1)
+            tracking_confidence: Min confidence for landmark tracking (0-1)
+            max_hands: Maximum number of hands to detect
+        """
         self.mp_hands = mp.solutions.hands # pyright: ignore[reportAttributeAccessIssue]
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
